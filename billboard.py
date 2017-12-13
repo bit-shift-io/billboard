@@ -133,12 +133,6 @@ def get_resolution():
         print ("Width:" + width + ",height:" + height)
         
         
-def check_player():
-    is_binary_installed('xrandr')
-    is_binary_installed('ffplay')
-    is_binary_installed('mogrify')
-
-
 def is_binary_installed(bin):
     try:
         output = (subprocess.check_output('which '+bin,shell=True)).decode(encoding='UTF-8')
@@ -147,11 +141,15 @@ def is_binary_installed(bin):
     
     
 def start():
+    # time for os to load
+    time.sleep(10)
+    
     p_stream = None
     p_slideshow = None
-            
-    get_resolution()
-    check_player()    
+
+    is_binary_installed('xrandr')
+    is_binary_installed('ffplay')
+    is_binary_installed('mogrify') 
     
     # mount smb
     #smb_mount()
@@ -159,13 +157,15 @@ def start():
     convert_to_jpg()
     slides = get_slides()
     
+    get_resolution()
+        
     # run slide show, this should always be running in background
     p_slideshow = launch_slideshow()
 
     # now we have a loop, if we detect a stream, run the stream
     while True:
         # sleepy time
-        time.sleep(6)
+        time.sleep(60)
   
         # check if stream exists
         s_exists = stream_exists()
@@ -195,7 +195,7 @@ def install():
     # https://superuser.com/questions/1025091/start-a-systemd-user-service-at-boot
     # https://www.dexterindustries.com/howto/run-a-program-on-your-raspberry-pi-at-startup/
     # https://wiki.archlinux.org/index.php/Systemd/User#Writing_user_units
-    service_path = home +'/.config/systemd/user/tool-slideshow.service'
+    service_path = home +'/.config/systemd/user/billboard.service'
     cmd = 'mkdir -p ' + home +'/.config/systemd/user/'
     subprocess.Popen(cmd,shell=True)
     
@@ -203,12 +203,10 @@ def install():
     file = open(service_path,'w')
     file.write('[Unit]\n')
     file.write('Description=Slideshow Service\n')
-    #file.write('After=multi-user.target\n')
     file.write('\n')
     file.write('[Service]\n')
-    #file.write('User=pi\n') # need to make this find the current login user?
-    #file.write('Type=simple\n')
     file.write('Type=idle\n')
+    file.write('Environment=DISPLAY=:0\n')
     #file.write('RemainAfterExit=true\n')
     file.write('ExecStart=/usr/bin/python ' + py_path)
     file.write('\n\n')    
@@ -216,19 +214,22 @@ def install():
     file.write('WantedBy=default.target\n')
     file.write('\n')  
     
-    # loginctl enable-linger username
+    cmd = 'loginctl enable-linger ' + getpass.getuser()
+    subprocess.Popen(cmd,shell=True)
     
-    cmd = 'systemctl --user enable tool-slideshow'
+    cmd = 'systemctl --user enable billboard'
     subprocess.Popen(cmd,shell=True)
 
     
 def remove():
-    cmd = 'sudo systemctl disable tool-slideshow'
+    cmd = 'sudo systemctl disable billboard'
     process = subprocess.Popen(cmd,shell=True)
-    os.remove('/etc/systemd/system/tool-slideshow.service')
+    service_path = home +'/.config/systemd/user/billboard.service'
+    os.remove(service_path)
     
 ###################################
 def main(argv):
+   
     # switch for args
     # https://www.tutorialspoint.com/python3/python_command_line_arguments.htm
     try:
