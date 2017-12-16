@@ -247,14 +247,14 @@ def remove():
     cmd = 'systemctl disable home-'+getpass.getuser()+'-slides.automount'
     process = subprocess.Popen(cmd,shell=True)
     
-    service_path = home +'/.config/systemd/user/billboard.service'
-    os.remove(service_path)
+    cmd = 'sudo rm '+home+'/.config/systemd/user/billboard.service'
+    process = subprocess.Popen(cmd,shell=True)
     
-    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.mount'
-    os.remove(service_path)
+    cmd = 'sudo rm /etc/systemd/system/home-'+getpass.getuser()+'-slides.mount'
+    process = subprocess.Popen(cmd,shell=True)
     
-    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.automount'
-    os.remove(service_path)    
+    cmd = 'sudo rm /etc/systemd/system/home-'+getpass.getuser()+'-slides.automount'
+    process = subprocess.Popen(cmd,shell=True)   
     
 ###################################
 def main(argv):
