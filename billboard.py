@@ -1,11 +1,5 @@
 #!/usr/bin/env python
 
-# obs setup
-# https://helping-squad.com/obs-studio-send-an-udp-stream-to-a-second-pc-using-obs/
-
-# need to disable sudo password
-# nano /etc/sudoers
-
 # https://superuser.com/questions/991371/ffmpeg-scale-and-pad#991412
 
 # vlc image setting
@@ -20,23 +14,12 @@ import getpass
 home = os.path.expanduser('~')
 
 # variables
-src_dir = os.path.join(str(home),'Slideshow')
-img_duration = 10 # seconds
+src_dir = os.path.join(str(home),'slides')
+img_duration = 60 # seconds
 stream_any='0.0.0.0'
 stream_address='224.0.0.1'
 stream_port=9999
-smb_dir='//192.168.1.10/Documents/Slideshow'
-smb_user='user'
-smb_pass='pass'
-log_level='quiet' # 'quiet'
-
-# mount smb
-def smb_mount():
-    if not os.path.exists(src_dir):
-        os.mkdir(src_dir)
-
-    cmd = 'mount -t cifs ' + smb_dir + ' ' + src_dir + ' -o username='+smb_user+',password='+smb_pass
-    subprocess.check_call( cmd, shell=True )
+log_level='quiet'
 
 
 def get_slides():
@@ -49,7 +32,7 @@ def get_slides():
 def convert_to_jpg():
     for f in get_slides():
         cmd = 'mogrify -format jpg ' + f
-        subprocess.check_call( cmd, shell=True )
+        subprocess.Popen( cmd, shell=True )
 
 
 def launch_slideshow():
@@ -58,8 +41,6 @@ def launch_slideshow():
     # calculate time
     frame_time = str(1.0 / img_duration)
     
-    #--enable-decoder=mjpeg,png --enable-demuxer=image2 --enable-muxer=image2 --enable-protocol=file --enable-zlib
-
     cmd = 'ffplay -fs -loop 0 -framerate '+frame_time+' -hide_banner -loglevel '+log_level+' -pattern_type glob -i "'+src_dir+'/*.jpg" -f image2 -vf "scale=w=1920:h=1080:force_original_aspect_ratio=1,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"'
     # play
     process = subprocess.Popen('exec ' + cmd,stdout=subprocess.PIPE,shell=True)
@@ -77,19 +58,6 @@ def launch_stream():
     process = subprocess.Popen('exec ' + cmd,stdout=subprocess.PIPE,shell=True)
     return process
     #check_call(vlc --one-instance --one-instance --fullscreen --no-video-title --no-qt-error-dialogs --quiet --no-playlist-tree udp://@$MUTLICAST_ADDRESS:$MULTICAST_PORT)
-
-def connect_socket():
-    # https://www.cyberciti.biz/tips/linux-investigate-sockets-network-connections.html
-    # limit to x seconds. Only need to capture 1 packet
-    # sudo timeout 4 tcpdump -c 1 -i any port 9999 and host 224.0.0.1 2>&1 | grep -c UDP
-    #result=$(sudo timeout 4 tcpdump -c 1 -i any port $MULTICAST_PORT and host $MUTLICAST_ADDRESS 2>&1 | grep -c UDP)
-    #echo "$result"
-    
-    # Create a UDP socket
-    # done at top
-
-    
-    return stream_socket
 
     
 def stream_exists():
@@ -142,7 +110,7 @@ def is_binary_installed(bin):
     
 def start():
     # time for os to load
-    time.sleep(10)
+    time.sleep(30)
     
     p_stream = None
     p_slideshow = None
@@ -150,16 +118,13 @@ def start():
     is_binary_installed('xrandr')
     is_binary_installed('ffplay')
     is_binary_installed('mogrify') 
-    
-    # mount smb
-    #smb_mount()
 
     convert_to_jpg()
     slides = get_slides()
     
     get_resolution()
         
-    # run slide show, this should always be running in background
+    # run slide show
     p_slideshow = launch_slideshow()
 
     # now we have a loop, if we detect a stream, run the stream
@@ -189,12 +154,62 @@ def start():
             p_slideshow.kill()
             p_slideshow = launch_slideshow()            
   
-        
+
+def install_smb():
+    smb_remote = input("Please enter network path(eg: //192.168.1.1/Documents/): ")
+    smb_username = input("Please enter username: ")
+    smb_password = input("Please enter password: ")
+    
+    # write to temp
+    service_path = '/tmp/slides.mount'
+    file = open(service_path,'w')
+    file.write('[Unit]\n')
+    file.write('  Description=cifs mount script\n')
+    file.write('  Requires=network-online.target\n')
+    file.write('  After=network-online.service\n')
+    file.write('  Wants=network-online.target\n')
+    file.write('\n')
+    file.write('[Mount]\n')
+    file.write('  What='+smb_remote+'\n')
+    file.write('  Where='+src_dir+'\n')
+    file.write('  Options=username='+smb_username+',password='+smb_password+',rw,x-systemd.automount\n')
+    file.write('  Type=cifs\n')
+    file.write('  TimeoutSec=10\n')
+    file.write('\n')
+    file.write('[Install]\n')
+    file.write('  WantedBy=multi-user.target\n')
+    file.close()
+    
+    # write to temp
+    service_path = '/tmp/slides.automount'
+    file = open(service_path,'w')
+    file.write('[Unit]\n')
+    file.write('  Description=cifs mount script\n')
+    file.write('  Requires=network-online.target\n')
+    file.write('  After=network-online.service\n')
+    file.write('\n')
+    file.write('[Automount]\n')
+    file.write('  Where='+src_dir+'\n')
+    file.write('  TimeoutIdleSec=10\n')
+    file.write('\n')
+    file.write('[Install]\n')
+    file.write('  WantedBy=multi-user.target\n')
+    file.close()
+    
+    # move with sudo
+    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.automount'
+    os.system('sudo mv /tmp/slides.automount ' + service_path )
+    
+    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.mount'
+    os.system('sudo mv /tmp/slides.mount ' + service_path)
+    
+    cmd = 'systemctl enable home-'+getpass.getuser()+'-slides.mount'
+    subprocess.Popen(cmd,shell=True)   
+    
+    cmd = 'systemctl enable home-'+getpass.getuser()+'-slides.automount'
+    subprocess.Popen(cmd,shell=True)      
+    
 def install():
-    # https://askubuntu.com/questions/676007/how-do-i-make-my-systemd-service-run-via-specific-user-and-start-on-boot
-    # https://superuser.com/questions/1025091/start-a-systemd-user-service-at-boot
-    # https://www.dexterindustries.com/howto/run-a-program-on-your-raspberry-pi-at-startup/
-    # https://wiki.archlinux.org/index.php/Systemd/User#Writing_user_units
     service_path = home +'/.config/systemd/user/billboard.service'
     cmd = 'mkdir -p ' + home +'/.config/systemd/user/'
     subprocess.Popen(cmd,shell=True)
@@ -202,17 +217,18 @@ def install():
     py_path = os.path.realpath(__file__)
     file = open(service_path,'w')
     file.write('[Unit]\n')
-    file.write('Description=Slideshow Service\n')
+    file.write('  Description=Slideshow Service\n')
     file.write('\n')
     file.write('[Service]\n')
-    file.write('Type=idle\n')
-    file.write('Environment=DISPLAY=:0\n')
-    #file.write('RemainAfterExit=true\n')
-    file.write('ExecStart=/usr/bin/python ' + py_path)
+    file.write('  Type=idle\n')
+    file.write('  Environment=DISPLAY=:0\n')
+    #file.write('  RemainAfterExit=true\n')
+    file.write('  ExecStart=/usr/bin/python ' + py_path)
     file.write('\n\n')    
     file.write('[Install]\n')
-    file.write('WantedBy=default.target\n')
+    file.write('  WantedBy=default.target\n')
     file.write('\n')  
+    file.close()
     
     cmd = 'loginctl enable-linger ' + getpass.getuser()
     subprocess.Popen(cmd,shell=True)
@@ -224,16 +240,26 @@ def install():
 def remove():
     cmd = 'sudo systemctl disable billboard'
     process = subprocess.Popen(cmd,shell=True)
+    
+    cmd = 'systemctl disable home-'+getpass.getuser()+'-slides.mount'
+    process = subprocess.Popen(cmd,shell=True)
+    
+    cmd = 'systemctl disable home-'+getpass.getuser()+'-slides.automount'
+    process = subprocess.Popen(cmd,shell=True)
+    
     service_path = home +'/.config/systemd/user/billboard.service'
     os.remove(service_path)
     
+    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.mount'
+    os.remove(service_path)
+    
+    service_path = '/etc/systemd/system/home-'+getpass.getuser()+'-slides.automount'
+    os.remove(service_path)    
+    
 ###################################
 def main(argv):
-   
-    # switch for args
-    # https://www.tutorialspoint.com/python3/python_command_line_arguments.htm
     try:
-        opts, args = getopt.getopt(argv,"iru",[""])
+        opts, args = getopt.getopt(argv,"hirs",[""])
     except getopt.GetoptError:
         print ('Invalid arguments use -h to show help')
         sys.exit(2)
@@ -242,7 +268,7 @@ def main(argv):
         if opt == '-h':
             print ('tool-slideshow.py -i   to install as system service')
             print ('tool-slideshow.py -r   to remove as system service')
-            print ('tool-slideshow.py -u   to remove as system service')
+            print ('tool-slideshow.py -s   to configure samba mount')
             sys.exit()
         elif opt in ("-i", "--install"):
             install()
@@ -250,9 +276,10 @@ def main(argv):
         elif opt in ("-r", ""):      
             remove()
             sys.exit()
-        elif opt in ("-u", ""):   
-            remove()
-            sys.exit()
+        elif opt in ("-s", ""):   
+            install_smb()
+            sys.exit() 
+            
     start()
     
 
