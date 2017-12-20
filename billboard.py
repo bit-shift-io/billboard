@@ -22,15 +22,24 @@ stream_port=9999
 log_level='quiet'
 
 
+def get_png():
+    file_list = []
+    for file in os.listdir(src_dir): #os.walk
+        if file.lower().endswith('.png'):
+            file_list.append(os.path.join(src_dir,file))
+    return file_list
+
+
 def get_slides():
     file_list = []
     for file in os.listdir(src_dir): #os.walk
-        file_list.append(os.path.join(src_dir,file))
+        if file.lower().endswith('.jpg'):
+            file_list.append(os.path.join(src_dir,file))
     return file_list
 
 
 def convert_to_jpg():
-    for f in get_slides():
+    for f in get_png():
         cmd = 'mogrify -format jpg ' + f
         subprocess.Popen( cmd, shell=True )
 
